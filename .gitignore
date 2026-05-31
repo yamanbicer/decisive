@@ -3,4 +3,13 @@ venv/
 __pycache__/
 *.pyc
 .env
+.env.local
 wandb/
+
+# node / next
+node_modules/
+.next/
+frontend/.env.local
+
+# misc
+voice/out/

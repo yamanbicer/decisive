@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+weave
+wandb
+openai
+anthropic
+claude-agent-sdk
+supabase
+pydantic-settings
+sse-starlette
+python-dotenv
+httpx
+pyjwt
