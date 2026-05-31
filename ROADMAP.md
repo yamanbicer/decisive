@@ -1,7 +1,7 @@
-# Company Brain — Build Roadmap & Technical Spec
+# Decision Harness — Build Roadmap & Technical Spec
 **Multi-Agent Orchestration Build Day · May 31, 2026 · 5-hour build · 4 engineers**
 
-Working title: **Company Brain** (alt names to vote on: *Quorum*, *Council*, *Conclave*).
+Product name: **Decision Harness**.
 One-liner: *Assemble a board of AI specialists, pose a decision, watch them debate in a live voice "boardroom," and get a weighted, fully-inspectable verdict you can replay, audit, and re-run.*
 
 ---
@@ -87,7 +87,7 @@ What we **keep** from the brief: the weighted-scoring idea, the human-in-the-loo
 | **WS-A Debate Engine** | **You** | Claude Agent SDK orchestration, rounds, peer requests, MCP tools, weighted verdict, Weave ops | `backend/engine/` |
 | **WS-B Backend/API + DB** | Eng 2 | FastAPI, Supabase schema + auth, SSE streaming, persistence layer, scorers/evals | `backend/api/`, `backend/db/` |
 | **WS-C Frontend** | Eng 3 | Next.js: auth, org builder, boardroom, inspector, influence graph, verdict/HITL | `frontend/` |
-| **WS-D Voice/Meeting** | Eng 4 | TTS per agent, virtual-meeting bot (Zoom/Meet), STT for human, audio routing | `voice/` |
+| **WS-D Voice/Meeting** | Eng 4 | ElevenLabs streaming TTS per voice + realtime STT in the boardroom; Recall.ai bot → Zoom/Meet (stretch) | `voice/` |
 
 Decoupling rule: **WS-D and WS-C both consume the `events` stream**; if voice or any panel isn't done, the rest still demos. WS-A writes events; WS-B persists + streams them; WS-C renders; WS-D speaks them.
 
@@ -311,7 +311,7 @@ async def orchestrate_verdict(session, org, agents, positions):
 - `research` — web search (Firecrawl/Tavily or a stub) so agents ground claims.
 - `company_data` — mock CRM/financials JSON, exposed as an MCP server, so a "CFO" agent can pull numbers.
 - `wandb` — the **already-configured W&B MCP**; lets agents query past decisions/traces. Double sponsor use.
-- Stretch: expose the **whole orchestrator as an MCP server** (`evaluate_decision(question, org)`), so Company Brain is callable from Claude Desktop — a clean A2A/MCP narrative.
+- Stretch: expose the **whole orchestrator as an MCP server** (`evaluate_decision(question, org)`), so Decision Harness is callable from Claude Desktop — a clean A2A/MCP narrative.
 
 ---
 
@@ -351,17 +351,24 @@ LLM call: prompt → a JSON team of agents (name, role, system_prompt, weight, s
 
 ---
 
-## 10. Voice / virtual meeting (WS-D) — own this end-to-end
+## 10. Voice — real-time ElevenLabs speech-to-speech (WS-D owns end-to-end)
 
-**Goal:** agents speak aloud and attend a real Zoom/Google Meet; the human can talk and agents respond.
+**Decision (from research):** use **ElevenLabs streaming TTS (one WebSocket per board-member voice) + ElevenLabs realtime STT**, with our Claude orchestrator as the brain. **Do NOT use the full ElevenLabs "Agents" product** — its built-in LLM would drive the conversation and fight our orchestrator. We want the raw voice pipes; Decision Harness decides who speaks and what.
 
-**Tiered plan (ship the lowest tier first, climb if time):**
-1. **Tier 1 — Browser TTS (always works):** WS-C boardroom subscribes to `events`; for each `message`, call ElevenLabs streaming TTS with the agent's `voice_id`, play in-browser. Distinct voice per agent. *This alone makes the demo sing and needs no meeting integration.*
-2. **Tier 2 — Bot joins the meeting:** use **Recall.ai** (meeting-bot API) to send a bot into Google Meet/Zoom and play the TTS audio into the call. Agents are now "in the room."
-3. **Tier 3 — Two-way:** STT (Deepgram or Whisper) on the meeting audio → transcribe the human → POST as `context`/`peer_request` into the running session → agents respond live. Full conversational boardroom.
+**Can the agents be in Zoom/Google Meet? Yes — but only realistically via Recall.ai Output Media.** There is no native ElevenLabs↔Zoom/Meet connector; the Zoom Meeting SDK, headless-Chrome bots, and Google Meet Media API are all multi-day plumbing. Recall.ai renders **a webpage we host** as the meeting bot (audio out + meeting audio in via the Web Audio API). **Crucially, that webpage IS our web boardroom UI** — so we build the boardroom once and Recall is a thin bolt-on, not a rewrite. This is exactly the call: build the web boardroom UI; it doubles as the meeting surface.
 
-**Pipeline:** `events(message)` → ElevenLabs TTS (per-agent voice) → audio buffer → (Tier 2) Recall.ai output / virtual mic → meeting. **STT** path: meeting audio → Deepgram → text → `/sessions/{id}` context injection.
-**Decoupling:** WS-D reads the same SSE/Realtime stream as the frontend, so it integrates without touching WS-A/B internals. If Tier 2/3 slip, Tier 1 in the browser is the fallback and still demos voice.
+**Exact APIs (verified against elevenlabs.io/docs):**
+- Per-voice speech: `wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input` — Flash v2.5 ≈ 75 ms; `output_format=pcm_16000`; **one WS per distinct `voice_id`**. SDK `@elevenlabs/react` handles browser playback. (`/multi-stream-input` if managing many utterances per voice.)
+- Human → agents: `wss://api.elevenlabs.io/v1/speech-to-text/realtime` — browser mic via `getUserMedia` → STT → transcript → POST into the running session as `context`/`peer_request`.
+- Concurrency: 3–5 simultaneous voices → ElevenLabs **Creator (5) / Pro (10)** plan.
+- Browser auth: don't ship the raw key client-side — backend issues a short-lived ElevenLabs token / signed URL via a `/voice/token` endpoint.
+
+**Tiers (the boardroom page is the SAME artifact in all of them):**
+1. **Tier 1 — Web-boardroom voices (PRIMARY, guaranteed):** the boardroom subscribes to the `events` stream; each `message` → that agent's ElevenLabs TTS WS → spoken in-browser in its distinct voice, with live captions + avatar highlight. Human mic → ElevenLabs STT → injected into the live debate. A full two-way real-time voice boardroom with **zero meeting dependencies**.
+2. **Tier 2 — Into Zoom/Meet (stretch, same page):** point a **Recall.ai Output Media** bot at the boardroom page's public URL → the bot joins the Zoom/Meet, plays agent audio, and pipes meeting audio back to the page for STT. (~$0.50/recording-hr; Zoom + Meet + Teams.)
+3. **Tier 0 — Screen-share fallback:** if Recall slips, screen-share the boardroom browser tab into Zoom with tab-audio on → agent voices are audible in the call (one-way), **zero code**.
+
+**Decoupling:** WS-D consumes the same SSE/Realtime `events` stream as the frontend and POSTs STT transcripts back through the API — no coupling to WS-A/B internals. If Tier 2 slips, Tier 1 fully demos real-time voice.
 
 ---
 
@@ -383,12 +390,11 @@ NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
-# voice/.env
-ELEVENLABS_API_KEY=...
-RECALL_API_KEY=...                # Tier 2 (meeting bot)
-DEEPGRAM_API_KEY=...              # Tier 3 (STT)
+# voice/.env  (Tier-1 voice runs in the browser; these power the bot + the /voice/token + STT proxy)
+ELEVENLABS_API_KEY=...            # streaming TTS + realtime STT (Creator(5)/Pro(10) plan for 3-5 voices)
+RECALL_API_KEY=...                # Tier 2: Recall.ai Output Media bot → Zoom/Meet (stretch)
 ```
-**Accounts to create now:** Supabase project (1 person), ElevenLabs (WS-D), Recall.ai (WS-D), Anthropic credits via `https://forms.gle/rj1tGQK6cBeYmvq38`. W&B already done. **Rotate the W&B key post-event** (it appeared in a transcript).
+**Accounts to create now:** Supabase project (1 person), ElevenLabs **Creator/Pro** plan (WS-D — needed for 3-5 concurrent voices), Recall.ai (WS-D, stretch), Anthropic credits via `https://forms.gle/rj1tGQK6cBeYmvq38`. W&B already done. **Rotate the W&B key post-event** (it appeared in a transcript).
 
 ---
 
@@ -429,14 +435,14 @@ decision_harness/
 - **WS-A:** Round-0 only: 3 agents → independent `position` events, hard-coded org. Wrap in `@weave.op()`. Print + write events to DB.
 - **WS-B:** `POST /sessions` (creates row, kicks off engine), `GET /sessions/{id}`, Supabase persistence layer, JWT auth middleware.
 - **WS-C:** Auth flow; "New Decision" form (pick org, question) → calls `POST /sessions`; raw event list view.
-- **WS-D:** Tier 1 browser TTS proof: speak a hard-coded line in 3 distinct voices.
+- **WS-D:** ElevenLabs streaming-TTS proof — speak a hard-coded line in 3 distinct voices in-browser (`/stream-input` per `voice_id`).
 - **Checkpoint (1:30): one question → 3 positions persisted → visible in UI.** Vertical slice alive.
 
 ### H2 (1:30–2:30) — Debate + streaming
 - **WS-A:** Rounds 1..N: `agent_turn` with peer visibility, `message` + `position_update` + `influenced_by`; conflict detection + converge. Claude Agent SDK subagents wired.
 - **WS-B:** SSE `/sessions/{id}/stream`; engine pushes events to per-session queue. Persist positions per round.
 - **WS-C:** `useEventStream` hook (SSE) → live-rendering Boardroom (agent seats + streaming bubbles + round indicator).
-- **WS-D:** Tier 1 wired to the real event stream — agents speak as messages arrive. Begin Recall.ai bot (Tier 2).
+- **WS-D:** Tier 1 wired to the event stream — each agent speaks in its ElevenLabs voice as messages arrive; add human mic → ElevenLabs realtime STT → context injection. Begin Recall.ai (Tier 2).
 - **Checkpoint (2:30): live multi-round debate streams into the boardroom and is spoken aloud.**
 
 ### H3 (2:30–3:30) — Verdict, influence, MCP tools
@@ -450,7 +456,7 @@ decision_harness/
 - **WS-A:** AI org-builder `/orgs/generate`; multi-model panel (1–2 agents on W&B Inference).
 - **WS-B:** `weave.Evaluation` across presets → leaderboard; HITL `/sessions/{id}/rerun` (new weights/context → child session).
 - **WS-C:** Org Builder UI (CRUD agents, weights, voices); HITL weight sliders + context box + "Re-run"; side-by-side compare (parent vs child session).
-- **WS-D:** Tier 3 (STT) if on track, else harden Tier 2; pick the demo meeting setup.
+- **WS-D:** harden Recall.ai Tier 2 (bot in Zoom/Meet) + two-way STT; lock the demo meeting setup. Fallback = Tier-0 tab screen-share.
 - **Checkpoint (4:30): preset orgs, generated org, re-run, eval leaderboard all working.**
 
 ### H5 (4:30–5:30) — Demo hardening + submission (overlaps dinner 6pm)
@@ -462,7 +468,7 @@ decision_harness/
 ---
 
 ## 14. Demo script (3 min)
-1. (20s) "Company Brain — assemble an AI board, ask a decision, watch them argue." Show preset **VC Committee**.
+1. (20s) "Decision Harness — assemble an AI board, ask a decision, watch them argue." Show preset **VC Committee**.
 2. (30s) Generate a *new* org from a prompt ("biotech seed investors") → instant team. (sponsor: shows configurability)
 3. (60s) Ask the live question; **boardroom debates out loud** in the Meet; bubbles stream; an agent calls the `research` tool; another asks a peer a direct question; positions shift.
 4. (30s) **Verdict** with weighted score + the **influence graph** ("the CFO swung the room"). Open the **Weave trace**.
@@ -474,7 +480,7 @@ decision_harness/
 
 | Risk | Mitigation / Fallback |
 |---|---|
-| Meeting-bot (Tier 2/3) eats the clock | Tier 1 browser TTS is the demo fallback; WS-D is fully decoupled. |
+| Recall.ai meeting bot eats the clock | Tier-1 web-boardroom voice (ElevenLabs) is the guaranteed demo; Tier-0 tab screen-share is the zero-code fallback; WS-D is decoupled. |
 | Claude Agent SDK unfamiliarity | Start with plain Anthropic SDK calls behind `agent_turn`; swap to Agent SDK once green. Interface unchanged. |
 | SSE/streaming flakiness | Fall back to Supabase Realtime subscription on `events`, or 1s polling of `GET /sessions/{id}`. |
 | Supabase auth/RLS friction | Ship with a single demo user + permissive RLS; keep `owner_id` for later. |
