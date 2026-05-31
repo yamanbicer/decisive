@@ -201,7 +201,7 @@ export default function Home() {
       />
 
       <footer className="row between wrapflex" style={{ marginTop: 40, paddingTop: 18, borderTop: "1px solid var(--line)", gap: 10 }}>
-        <span className="eyebrow">Decision Harness · a configurable AI council</span>
+        <span className="eyebrow">Decisive AI · a configurable AI council</span>
         {!demo && <a className="mono small faint" href="?demo">▸ watch the sample debate</a>}
       </footer>
     </div>

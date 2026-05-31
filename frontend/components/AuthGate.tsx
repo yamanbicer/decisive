@@ -57,7 +57,7 @@ function LoginForm() {
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
       <div style={{ width: "min(380px, 100%)" }}>
       <div className="eyebrow" style={{ marginBottom: 6 }}>The Deliberation Room</div>
-      <h1 style={{ fontSize: 34 }}>Decision Harness</h1>
+      <h1 style={{ fontSize: 34 }}>Decisive AI</h1>
       <div className="muted small" style={{ marginTop: 4 }}>Convene an AI council. Put a decision to the floor. Watch them argue — with a full audit trail.</div>
 
       <form className="panel" style={{ margin: "16px 0", maxWidth: 380 }} onSubmit={submit}>

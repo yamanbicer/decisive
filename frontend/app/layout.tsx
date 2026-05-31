@@ -25,7 +25,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Decision Harness — the AI deliberation room",
+  title: "Decisive AI — the AI deliberation room",
   description:
     "Convene a configurable AI council, put a decision to the floor, and watch them debate it out loud — with a full, inspectable audit trail and a weighted verdict.",
 };
