@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return list({self.frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"})
 
+    @property
+    def cors_origin_regex(self) -> str:
+        # Vercel serves each project under a per-deploy URL *and* a stable alias
+        # (both *.vercel.app). Allow the whole suffix so CORS doesn't break when
+        # the exact deploy hash changes. localhost stays covered by cors_origins.
+        return r"https://([a-z0-9-]+\.)*vercel\.app"
+
 
 @lru_cache
 def get_settings() -> Settings:
