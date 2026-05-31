@@ -3,8 +3,20 @@ import type { Agent, InfluenceGraph, Org, SessionDetail } from "./types";
 
 export interface CreateSessionResponse { session_id: string }
 
+// Mirrors backend AgentCreate / AgentUpdate (schemas.py §6).
+export interface AgentCreateBody {
+  name: string; role: string; system_prompt: string;
+  model?: string; provider?: "anthropic" | "wandb"; weight?: number;
+  voice_id?: string | null; tools?: string[]; position?: number;
+}
+export type AgentUpdateBody = Partial<AgentCreateBody>;
+
+// Default to the literal IPv4 loopback, NOT "localhost". On macOS `localhost`
+// resolves to both 127.0.0.1 and ::1, and browsers may pick IPv6 ::1 first —
+// but uvicorn binds IPv4-only by default, so a ::1 connection is refused and
+// fetch throws "TypeError: Failed to fetch". 127.0.0.1 is unambiguously IPv4.
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 // The current Supabase access token, kept in sync by AuthProvider (lib/auth.tsx)
 // on every sign-in / token refresh. Read synchronously by both j() and streamUrl().
@@ -30,7 +42,16 @@ export const api = {
   // and returns all their orgs.
   ensureSeed: () => j<Org[]>("/orgs/ensure-seed", { method: "POST" }),
   listOrgs: () => j<Org[]>("/orgs"),
+  createOrg: (body: { name: string; description?: string; preset?: string }) =>
+    j<Org>("/orgs", { method: "POST", body: JSON.stringify(body) }),
+  // AI org-builder (ROADMAP §9.4): synthesize a full panel from a prompt.
+  generateOrg: (prompt: string) =>
+    j<Org>("/orgs/generate", { method: "POST", body: JSON.stringify({ prompt }) }),
   listAgents: (orgId: string) => j<Agent[]>(`/orgs/${orgId}/agents`),
+  createAgent: (orgId: string, body: AgentCreateBody) =>
+    j<Agent>(`/orgs/${orgId}/agents`, { method: "POST", body: JSON.stringify(body) }),
+  updateAgent: (agentId: string, body: AgentUpdateBody) =>
+    j<Agent>(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(body) }),
   createSession: (body: { org_id: string; question: string; context?: string; rounds?: number }) =>
     j<CreateSessionResponse>("/sessions", { method: "POST", body: JSON.stringify(body) }),
   getSession: (id: string) => j<SessionDetail>(`/sessions/${id}`),

@@ -1,12 +1,20 @@
 "use client";
 // Gates the app behind Supabase email/password auth. In dev/in-memory mode
 // (Supabase not configured) it renders the app directly — no login required.
-import { useState } from "react";
+// A `?demo` query param also bypasses auth into the no-login replay mode, so
+// anyone (judges included) can see the full UI without an account.
+import { useEffect, useState } from "react";
 
 import { useAuth } from "../lib/auth";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading, configured } = useAuth();
+  const [demo, setDemo] = useState(false);
+  useEffect(() => {
+    setDemo(new URLSearchParams(window.location.search).has("demo"));
+  }, []);
+
+  if (demo) return <>{children}</>;
 
   if (loading) {
     return (
@@ -48,9 +56,11 @@ function LoginForm() {
   }
 
   return (
-    <div className="wrap">
-      <h1>Decision Harness</h1>
-      <div className="muted small">A configurable AI decision council.</div>
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
+      <div style={{ width: "min(380px, 100%)" }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>The Deliberation Room</div>
+      <h1 style={{ fontSize: 34 }}>Decision Harness</h1>
+      <div className="muted small" style={{ marginTop: 4 }}>Convene an AI council. Put a decision to the floor. Watch them argue — with a full audit trail.</div>
 
       <form className="panel" style={{ margin: "16px 0", maxWidth: 380 }} onSubmit={submit}>
         <b>{mode === "in" ? "Sign in" : "Create account"}</b>
@@ -72,7 +82,7 @@ function LoginForm() {
             minLength={6}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <button type="submit" disabled={busy || !email || !password}>
+          <button type="submit" className="btn btn-primary" style={{ justifyContent: "center" }} disabled={busy || !email || !password}>
             {busy ? "…" : mode === "in" ? "Sign in" : "Sign up"}
           </button>
         </div>
@@ -99,6 +109,9 @@ function LoginForm() {
           </a>
         </div>
       </form>
+
+      <a className="mono small faint" href="?demo">▸ or watch the sample debate — no account needed</a>
+      </div>
     </div>
   );
 }
