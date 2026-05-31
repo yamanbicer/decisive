@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # --- CORS ---
     frontend_origin: str = "http://localhost:3000"
+    # Vercel project slug used to pin the CORS origin regex (see cors_origin_regex).
+    frontend_vercel_slug: str = "decision-harness"
 
     # --- Auth posture ---
     # Local dev only: allow requests with no Authorization header (treated as the
@@ -69,10 +71,13 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_regex(self) -> str:
-        # Vercel serves each project under a per-deploy URL *and* a stable alias
-        # (both *.vercel.app). Allow the whole suffix so CORS doesn't break when
-        # the exact deploy hash changes. localhost stays covered by cors_origins.
-        return r"https://([a-z0-9-]+\.)*vercel\.app"
+        # Vercel serves this project under a stable alias AND per-deploy/preview
+        # URLs (decision-harness.vercel.app, decision-harness-<hash>-<scope>.vercel.app).
+        # Pin to THIS project's slug so we don't trust arbitrary third-party
+        # *.vercel.app origins (credentials are allowed). localhost stays in
+        # cors_origins. Override the slug via FRONTEND_VERCEL_SLUG if it changes.
+        slug = self.frontend_vercel_slug
+        return rf"https://{slug}(-[a-z0-9-]+)?\.vercel\.app"
 
 
 @lru_cache
