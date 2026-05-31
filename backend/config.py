@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_key: str = ""                 # server-side only
 
+    # --- ElevenLabs (Scribe STT for pitch-video analysis) ---
+    elevenlabs_api_key: str = ""
+    elevenlabs_stt_model: str = "scribe_v1"
+
     # --- CORS ---
     frontend_origin: str = "http://localhost:3000"
     # Vercel project + team slugs used to pin the CORS origin regex (see
@@ -58,6 +62,12 @@ class Settings(BaseSettings):
     @property
     def supabase_enabled(self) -> bool:
         return bool(self.supabase_url and self.supabase_service_key)
+
+    @property
+    def transcription_enabled(self) -> bool:
+        # Gates POST /sessions/from-video. Without a key the app still boots and
+        # every other route works — only video upload returns 503.
+        return bool(self.elevenlabs_api_key)
 
     @property
     def jwks_url(self) -> str:

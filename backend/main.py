@@ -67,5 +67,6 @@ def health():
         "weave": settings.weave_enabled,
         "supabase": settings.supabase_enabled,
         "auth": settings.auth_enabled,
+        "transcription": settings.transcription_enabled,
         "repo": "supabase" if get_supabase() else "in-memory",
     }

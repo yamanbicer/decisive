@@ -9,8 +9,10 @@ supabase
 pydantic-settings
 sse-starlette
 python-dotenv
+python-multipart
 httpx
 pyjwt[crypto]
+elevenlabs
 
 # dev
 pytest

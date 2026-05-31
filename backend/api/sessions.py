@@ -1,16 +1,20 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
+                     UploadFile)
 from sse_starlette.sse import EventSourceResponse
 
+from ..config import get_settings
 from ..db.repository import get_repo
 from ..engine import stream
 from ..engine.debate import run_debate
 from ..engine.orchestrator import build_influence_graph
+from ..engine.transcription import transcribe_media
 from ..schemas import (
     CreateSessionRequest,
     CreateSessionResponse,
+    CreateVideoSessionResponse,
     InfluenceGraph,
     RerunRequest,
     SessionDetail,
@@ -45,6 +49,42 @@ async def create_session(body: CreateSessionRequest, user: str = Depends(get_cur
                                created_by=user)
     asyncio.create_task(_run_debate(sess.id))
     return CreateSessionResponse(session_id=sess.id)
+
+
+@router.post("/from-video", response_model=CreateVideoSessionResponse)
+async def create_session_from_video(
+    org_id: str = Form(...),
+    question: str = Form("Based on this pitch, should we invest in / advance this startup?"),
+    rounds: int = Form(3),
+    context: str = Form(""),
+    file: UploadFile = File(...),
+    user: str = Depends(get_current_user),
+):
+    """Transcribe an uploaded pitch video (ElevenLabs Scribe) and convene the
+    council over it. The transcript becomes the session context, which flows
+    into every agent's prompt — so the verdict is grounded in the actual pitch.
+    """
+    settings = get_settings()
+    if not settings.transcription_enabled:
+        raise HTTPException(503, "video transcription not configured (set ELEVENLABS_API_KEY)")
+    repo = get_repo()
+    require_org_access(repo, org_id, user)
+    if not repo.list_agents(org_id):
+        raise HTTPException(400, "org has no agents")
+
+    data = await file.read()
+    # Scribe SDK call is blocking; keep it off the event loop.
+    transcript = await asyncio.to_thread(transcribe_media, data, file.filename or "pitch.mp4")
+    if not transcript:
+        raise HTTPException(422, "could not extract any speech from the uploaded video")
+
+    full_context = f"PITCH VIDEO TRANSCRIPT:\n{transcript}"
+    if context.strip():
+        full_context += f"\n\nADDITIONAL CONTEXT:\n{context.strip()}"
+
+    sess = repo.create_session(org_id, question, full_context, rounds, created_by=user)
+    asyncio.create_task(_run_debate(sess.id))
+    return CreateVideoSessionResponse(session_id=sess.id, transcript=transcript)
 
 
 @router.get("/{session_id}", response_model=SessionDetail)

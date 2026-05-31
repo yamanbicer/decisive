@@ -185,6 +185,11 @@ class CreateSessionResponse(BaseModel):
     session_id: str
 
 
+class CreateVideoSessionResponse(BaseModel):
+    session_id: str
+    transcript: str
+
+
 class RerunRequest(BaseModel):
     weights_override: Optional[dict[str, float]] = None
     context: Optional[str] = None
