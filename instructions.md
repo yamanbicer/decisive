@@ -1,0 +1,8 @@
+Here's how to start using W&B:
+
+Create a W&B account -https://wandb.ai/site
+Setup tracing of your agent with W&B Weave -https://docs.wandb.ai/weave/quickstart,https://docs.wandb.ai/weave/reference/service-api#service-api-overview
+Setup W&B MCP (and Skills) to use coding agents to help you instrument, evaluate and optimize your agents (very helpful!) -https://docs.wandb.ai/platform/mcp-server#use-the-w&b-mcp-server
+Intermediate: setup evaluations on Weave which GREATLY helps to optimize your multi-agent system and have coding agents hill-climb specific metrics for you automatically (using the MCP) -https://docs.wandb.ai/weave/guides/evaluation/evaluation_logger#log-evaluation-data-from-your-code, or create ONLINE evals withhttps://docs.wandb.ai/weave/guides/evaluation/monitors#set-up-monitors(easier for multi-turn evaluation potentially)
+Intermediate: next to 100 USD of W&B Inference credits there are 500 USD of W&B Training credits everyone gets in case you are considering SFT or GRPO)
+These are the two blogs that we shared from Anthropic on multi-agent systems (https://www.anthropic.com/engineering/multi-agent-research-system) and the new dynamic workflows (https://code.claude.com/docs/en/workflows), which I would recommend using through the Claude agent SDK (https://code.claude.com/docs/en/agent-sdk/overview), with which Weave has an integration (https://docs.wandb.ai/weave/guides/integrations/claude_agent).
