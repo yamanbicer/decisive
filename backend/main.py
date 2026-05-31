@@ -11,12 +11,12 @@ import weave
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import agents, orgs, sessions
+from .api import agents, orgs, projects, sessions
 from .api.deps import DEMO_USER_ID
 from .config import get_settings
 from .db.client import get_supabase
 from .db.repository import get_repo
-from .db.seed import seed_judge_panel
+from .db.seed import seed_all_councils
 
 settings = get_settings()
 
@@ -36,10 +36,9 @@ async def lifespan(app: FastAPI):
         # auth that would otherwise block uvicorn from serving /health, tripping
         # the platform healthcheck on a cold start. Tracing attaches once it's up.
         threading.Thread(target=_init_weave, daemon=True).start()
-    # Auto-seed the demo org into the in-memory store so dev has data immediately.
+    # Auto-seed the demo councils into the in-memory store so dev has data immediately.
     if not settings.supabase_enabled:
-        org = seed_judge_panel(get_repo(), DEMO_USER_ID)
-        if org:
+        for org in seed_all_councils(get_repo(), DEMO_USER_ID):
             print(f"✓ Seeded in-memory org '{org.name}' ({org.id})")
     yield
 
@@ -58,6 +57,7 @@ app.add_middleware(
 app.include_router(orgs.router)
 app.include_router(agents.router)
 app.include_router(sessions.router)
+app.include_router(projects.router)
 
 
 @app.get("/health")
@@ -68,5 +68,8 @@ def health():
         "supabase": settings.supabase_enabled,
         "auth": settings.auth_enabled,
         "transcription": settings.transcription_enabled,
+        "groq": settings.groq_enabled,
+        "vision": settings.vision_enabled,
+        "brief_ingestion": settings.brief_ingestion_enabled,
         "repo": "supabase" if get_supabase() else "in-memory",
     }

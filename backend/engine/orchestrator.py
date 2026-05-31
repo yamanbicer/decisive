@@ -25,9 +25,22 @@ from ..schemas import (
     Stance,
     Verdict,
 )
+from ..config import get_settings
+from .budget import pack_lines
 from .llm import complete_json, resolve_backend
-from .prompts import ORCHESTRATOR_PROMPT, SUMMARY_SCHEMA
-from .scoring import apply_veto_cap, blended_confidence, decision_from_score, weighted_score
+from .prompts import (
+    MODERATOR_PROMPT,
+    MODERATOR_SCHEMA,
+    ORCHESTRATOR_PROMPT,
+    SUMMARY_SCHEMA,
+)
+from .scoring import (
+    apply_veto_cap,
+    blended_confidence,
+    decision_from_score,
+    normalized_variance,
+    weighted_score,
+)
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"  # resolve_backend may downgrade to W&B Inference
 
@@ -72,10 +85,66 @@ def _transcript(events: list[Event], agents: list[Agent]) -> str:
         who = by_id.get(e.agent_id, "Orchestrator")
         if e.type == EventType.message:
             lines.append(f"{who}: {e.content.get('text', '')}")
+        elif e.type == EventType.peer_response:
+            lines.append(f"{who} (answering): {e.content.get('answer', '')}")
         elif e.type in (EventType.position, EventType.position_update):
             lines.append(f"{who} [{e.content.get('stance')} {e.content.get('score')}/10]: "
                          f"{e.content.get('rationale', '')}")
-    return "\n".join(lines)[:6000]
+    # Keep the most RECENT exchanges (final positions + last round) under budget,
+    # instead of a blunt head-slice that could drop the decisive turns.
+    return pack_lines(lines, get_settings().transcript_char_budget, keep="tail")
+
+
+@weave.op()
+async def moderate_round(agents: list[Agent], prev_positions: dict[str, Position],
+                         new_positions: dict[str, Position], rnd: int,
+                         conflict_pairs: list[tuple[str, str, str]]) -> dict:
+    """Active between-round moderator: who moved, where the live tension is, and a
+    directive for the next round (pitting declared conflict-partners, else the
+    widest-gap pair). Numbers are deterministic; the phrasing is LLM-polished when a
+    backend is configured, else a clean deterministic fallback."""
+    by_id = {a.id: a for a in agents}
+    movers = []
+    for aid, p in new_positions.items():
+        pv = prev_positions.get(aid)
+        if pv and abs(round(p.score - pv.score, 1)) >= 0.3:
+            movers.append({"agent_id": aid, "name": by_id[aid].name,
+                           "delta": round(p.score - pv.score, 1)})
+    conflict = round(normalized_variance([p.score for p in new_positions.values()]), 3)
+
+    pit: list[str] = []
+    dimension = ""
+    for a_id, b_id, dim in conflict_pairs:
+        if a_id in new_positions and b_id in new_positions:
+            pit, dimension = [a_id, b_id], dim
+            break
+    if not pit:
+        ordered = sorted(new_positions.items(), key=lambda kv: kv[1].score)
+        if len(ordered) >= 2 and ordered[-1][1].score - ordered[0][1].score >= 1.5:
+            pit = [ordered[0][0], ordered[-1][0]]
+
+    directive = ""
+    if pit:
+        directive = (f"{by_id[pit[0]].name} and {by_id[pit[1]].name}, resolve your disagreement"
+                     + (f" on {dimension}" if dimension else "") + " next round.")
+    note = f"Round {rnd}: conflict {conflict}; " + (
+        ", ".join(f"{m['name']} {'+' if m['delta'] > 0 else ''}{m['delta']}" for m in movers)
+        or "no one moved")
+
+    backend = resolve_backend("wandb")
+    if backend:
+        try:
+            ctx = (f"Conflict level {conflict} (0=consensus,1=split). Movers this round: "
+                   f"{note}. Suggested pairing: {directive or '(none)'}.")
+            d = await complete_json(backend, _DEFAULT_MODEL, MODERATOR_PROMPT, ctx, MODERATOR_SCHEMA)
+            note = str(d.get("note") or note)
+            directive = str(d.get("directive") or directive)
+        except Exception:
+            pass
+
+    return {"action": "moderate", "round": rnd, "conflict_level": conflict,
+            "movers": movers, "note": note, "directive": directive,
+            "pit": pit, "dimension": dimension}
 
 
 async def _summarize(transcript: str, positions: dict[str, Position],

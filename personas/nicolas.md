@@ -7,7 +7,7 @@ position: 0
 model: moonshotai/Kimi-K2.6
 provider: wandb
 voice_id: ErXwobaYiN019PkySvjV   # ElevenLabs stock "Antoni" — swap for a chosen voice
-tools: [research]
+tools: [research, web_search, weave_query]
 conflict_partner: raad
 conflict_dimension: Observability as sufficient evidence vs. operating-model accountability
 structural: false

@@ -7,7 +7,8 @@ position: 2
 model: deepseek-ai/DeepSeek-V4-Pro
 provider: wandb
 voice_id: pNInz6obpgDQGcFmaJgB   # ElevenLabs stock "Adam" — swap for a chosen voice
-tools: [research]
+tools: [research, product_research, competitor_scan]
+skills: [product-teardown]
 conflict_partner: uma
 conflict_dimension: Adoption momentum & boldness vs. evidentiary rigor
 structural: false

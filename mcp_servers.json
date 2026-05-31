@@ -1,0 +1,26 @@
+{
+  "_comment": "Live MCP servers exposed to council agents. Activated only when MCP_CONFIG_PATH points here (settings.mcp_enabled). Secrets use ${VAR} expanded from the process env. Connection failures are swallowed — a broken server just hides its tools.",
+  "servers": [
+    {
+      "name": "wandb",
+      "transport": "http",
+      "url": "https://mcp.withwandb.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${WANDB_API_KEY}"
+      },
+      "expose": [
+        {
+          "as": "weave_query",
+          "tool": "query_weave_traces_tool",
+          "description": "Query REAL W&B/Weave traces from this project as evidence — counts, latency, models, errors. Use it to ground claims about whether the harness actually works.",
+          "defaults": {
+            "entity_name": "yamanbicer-mindra",
+            "project_name": "company-brain-harness",
+            "detail_level": "summary",
+            "limit": 5
+          }
+        }
+      ]
+    }
+  ]
+}

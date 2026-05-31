@@ -7,7 +7,8 @@ position: 4
 model: openai/gpt-oss-120b
 provider: wandb
 voice_id: AZnzlk1XvdvUeBnXmlld   # ElevenLabs stock "Domi" — swap for a chosen voice
-tools: [research]
+tools: [research, fetch_url, competitor_scan]
+skills: [evidence-standard]
 conflict_partner: uma
 conflict_dimension: Proven enterprise value vs. unproven generalizability
 structural: true

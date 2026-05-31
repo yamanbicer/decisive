@@ -3,7 +3,7 @@ import pytest
 
 from backend.api import orgs as orgs_mod
 from backend.db.repository import InMemoryRepository
-from backend.db.seed import PERSONAS_DIR, load_personas
+from backend.db.seed import PERSONAS_DIR, load_personas, seed_vc_committee
 from backend.schemas import Provider
 
 
@@ -12,13 +12,13 @@ def test_ensure_seed_is_idempotent_per_user(monkeypatch):
     monkeypatch.setattr(orgs_mod, "get_repo", lambda: repo)
 
     first = orgs_mod.ensure_seed(user="user-1")
-    assert len(first) == 1
-    assert first[0].owner_id == "user-1"
+    # Both councils (judges + vc) are seeded on first login.
+    assert {o.preset for o in first} == {"judges", "vc"}
+    assert all(o.owner_id == "user-1" for o in first)
 
-    # Second call for the same user must NOT create a duplicate org.
+    # Second call for the same user must NOT create duplicate orgs.
     again = orgs_mod.ensure_seed(user="user-1")
-    assert len(again) == 1
-    assert again[0].id == first[0].id
+    assert {o.id for o in again} == {o.id for o in first}
 
 
 def test_ensure_seed_is_per_user(monkeypatch):
@@ -28,10 +28,10 @@ def test_ensure_seed_is_per_user(monkeypatch):
     orgs_mod.ensure_seed(user="user-1")
     other = orgs_mod.ensure_seed(user="user-2")
 
-    assert len(other) == 1
-    assert other[0].owner_id == "user-2"
-    # user-1 still owns exactly one org of their own.
-    assert len(repo.list_orgs("user-1")) == 1
+    assert {o.preset for o in other} == {"judges", "vc"}
+    assert all(o.owner_id == "user-2" for o in other)
+    # user-1 still owns exactly their own two councils.
+    assert len(repo.list_orgs("user-1")) == 2
 
 
 # ── persona parsing: honor the YAML frontmatter the persona files actually use ──
@@ -85,9 +85,12 @@ def test_system_prompt_excludes_raw_frontmatter(personas):
 
 
 def test_model_and_provider_come_from_frontmatter(personas):
+    # The council runs entirely on W&B Inference open models (no Anthropic), and the
+    # panel is model-diverse — each judge carries its own W&B catalog id.
     for p in personas.values():
-        assert p.provider == Provider.anthropic
-        assert p.model == "claude-sonnet-4-6"
+        assert p.provider == Provider.wandb
+        assert "/" in p.model               # a W&B Inference id, e.g. "moonshotai/Kimi-K2.6"
+    assert len({p.model for p in personas.values()}) > 1, "the panel must be model-diverse"
 
 
 def test_skeptic_is_structural_and_has_veto(personas):
@@ -108,3 +111,31 @@ def test_every_persona_has_a_distinct_voice(personas):
 def test_personas_carry_the_research_tool(personas):
     for p in personas.values():
         assert "research" in p.tools
+
+
+def test_judges_have_role_matched_tools_and_skills(personas):
+    # Retooled judges: the toolkit grew beyond bare `research`, and at least one
+    # judge carries a skill file.
+    assert any(len(p.tools) > 1 for p in personas.values())
+    assert any(p.skills for p in personas.values())
+
+
+# ── the new VC Investment Committee council ──
+
+def test_vc_committee_seeds_with_resolved_conflict_pairs():
+    repo = InMemoryRepository()
+    org = seed_vc_committee(repo, "u")
+    assert org is not None and org.preset == "vc"
+    agents = repo.list_agents(org.id)
+    assert len(agents) == 5
+
+    ids = {a.id for a in agents}
+    paired = [a for a in agents if a.conflict_partner]
+    assert paired, "expected declared conflict partners"
+    # conflict_partner stems were resolved to real agent_ids in this council
+    assert all(a.conflict_partner in ids for a in paired)
+
+    skeptic = next(a for a in agents if a.veto)
+    assert skeptic.structural
+    assert any("market_research" in a.tools for a in agents)
+    assert any(a.skills for a in agents)

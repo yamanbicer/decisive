@@ -7,7 +7,8 @@ position: 3
 model: Qwen/Qwen3-235B-A22B-Instruct-2507
 provider: wandb
 voice_id: TxGEqnHWrfWFTfGW9XjX   # ElevenLabs stock "Josh" — swap for a chosen voice
-tools: [research]
+tools: [research, fetch_url, market_research]
+skills: [governance-checklist]
 conflict_partner: nicolas
 conflict_dimension: Observability as sufficient evidence vs. operating-model accountability
 structural: false

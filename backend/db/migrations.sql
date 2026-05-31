@@ -26,16 +26,24 @@ create table if not exists agents (
   provider      text not null default 'anthropic',   -- 'anthropic' | 'wandb'
   weight        numeric not null default 1.0,
   voice_id      text,                     -- ElevenLabs voice id
-  tools         jsonb default '[]',       -- ["research","company_data","wandb"]
+  tools         jsonb default '[]',       -- ["research","market_research","weave_query"]
+  skills        jsonb default '[]',       -- ["product-teardown"] — use_skill targets
   position      int default 0,            -- seat order in the boardroom
   structural    boolean not null default false,  -- pinned seat (e.g. the Skeptic)
   veto          boolean not null default false,  -- can cap a clean YES to CONDITIONAL
+  -- conflict_partner is a plain uuid (NOT a FK to agents.id), like owner_id/created_by,
+  -- so re-seeding/deleting agents never trips a self-referential FK on delete order.
+  conflict_partner   uuid,                -- agent the moderator pits this one against
+  conflict_dimension text,                -- the axis of that disagreement
   created_at    timestamptz default now()
 );
 -- Idempotent for DBs created before these columns existed (create-if-not-exists
 -- above is a no-op once the table is present).
 alter table agents add column if not exists structural boolean not null default false;
 alter table agents add column if not exists veto       boolean not null default false;
+alter table agents add column if not exists skills      jsonb default '[]';
+alter table agents add column if not exists conflict_partner   uuid;
+alter table agents add column if not exists conflict_dimension text;
 
 create table if not exists sessions (
   id               uuid primary key default gen_random_uuid(),

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..db.repository import get_repo
-from ..db.seed import seed_judge_panel
+from ..db.seed import COUNCIL_SEEDERS
 from ..engine.org_builder import generate_org_agents
 from ..schemas import Agent, AgentCreate, CreateOrgRequest, GenerateOrgRequest, Org
 from .deps import get_current_user, require_org_access
@@ -16,15 +16,15 @@ def list_orgs(user: str = Depends(get_current_user)):
 
 @router.post("/ensure-seed", response_model=list[Org])
 def ensure_seed(user: str = Depends(get_current_user)):
-    """Idempotent first-login bootstrap: if the user owns no orgs, seed a personal
-    Judge Panel (owned by their auth.uid()), then return all their orgs. Safe to
-    call on every login."""
+    """Idempotent first-login bootstrap: ensure the user owns each preset council
+    (Judge Panel + VC Committee), seeding only the ones missing. Returns all their
+    orgs. Safe to call on every login."""
     repo = get_repo()
-    orgs = repo.list_orgs(user)
-    if not orgs:
-        seed_judge_panel(repo, user)
-        orgs = repo.list_orgs(user)
-    return orgs
+    have = {o.preset for o in repo.list_orgs(user)}
+    for preset, seed in COUNCIL_SEEDERS.items():
+        if preset not in have:
+            seed(repo, user)
+    return repo.list_orgs(user)
 
 
 @router.post("", response_model=Org)

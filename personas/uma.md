@@ -7,7 +7,8 @@ position: 1
 model: zai-org/GLM-5.1
 provider: wandb
 voice_id: 21m00Tcm4TlvDq8ikWAM   # ElevenLabs stock "Rachel" — swap for a chosen voice
-tools: [research]
+tools: [research, market_research, fetch_url]
+skills: [governance-checklist]
 conflict_partner: skeptic
 conflict_dimension: Proven enterprise value vs. unproven generalizability
 structural: false

@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..schemas import AgentCreate
+from ..schemas import AgentCreate, AgentUpdate
 
 PERSONAS_DIR = Path(__file__).resolve().parents[2] / "personas"
 
@@ -94,11 +94,22 @@ def _tools(val: str | None) -> list[str]:
     return [p.strip().strip("\"'") for p in v.split(",") if p.strip().strip("\"'")]
 
 
-def load_personas() -> list[AgentCreate]:
-    if not PERSONAS_DIR.exists():
+def _council_dir(subdir: str | None) -> Path:
+    return PERSONAS_DIR if not subdir else PERSONAS_DIR / subdir
+
+
+def _load_council(subdir: str | None = None):
+    """Parse a council's persona files. Returns a list of
+    (stem, AgentCreate, conflict_partner_stem, conflict_dimension).
+
+    The conflict_partner in frontmatter is a file *stem* (e.g. `uma`), resolved to
+    the partner's real agent_id after all agents in the council are created.
+    """
+    directory = _council_dir(subdir)
+    if not directory.exists():
         return []
-    agents: list[AgentCreate] = []
-    for i, path in enumerate(sorted(PERSONAS_DIR.glob("*"))):
+    out = []
+    for i, path in enumerate(sorted(directory.glob("*"))):
         if path.suffix.lower() not in (".md", ".txt"):
             continue
         fm, body = _split_frontmatter(path.read_text(encoding="utf-8", errors="ignore"))
@@ -109,6 +120,7 @@ def load_personas() -> list[AgentCreate]:
             weight=_float(fm.get("weight"), 1.0),
             position=_int(fm.get("position"), i),
             tools=_tools(fm.get("tools")),
+            skills=_tools(fm.get("skills")),
             structural=_bool(fm.get("structural")),
             # A persona vetoes if it declares `veto: true` or carries a `cap_rule` block.
             veto=_bool(fm.get("veto")) or "cap_rule" in fm,
@@ -119,18 +131,54 @@ def load_personas() -> list[AgentCreate]:
             kwargs["provider"] = fm["provider"]
         if _opt(fm.get("voice_id")):
             kwargs["voice_id"] = fm["voice_id"].strip()
-        agents.append(AgentCreate(**kwargs))
-    return agents
+        out.append((path.stem, AgentCreate(**kwargs),
+                    _opt(fm.get("conflict_partner")), _opt(fm.get("conflict_dimension"))))
+    return out
+
+
+def load_personas(subdir: str | None = None) -> list[AgentCreate]:
+    """The AgentCreate list for a council (root = the Judge Panel). Back-compat."""
+    return [ac for _, ac, _, _ in _load_council(subdir)]
+
+
+def _seed_council(repo, owner_id: str, subdir: str | None, name: str,
+                  description: str, preset: str):
+    """Create one council org, its agents, then resolve conflict_partner stems
+    to the partners' real agent_ids. Returns the Org (or None if no personas)."""
+    metas = _load_council(subdir)
+    if not metas:
+        return None
+    org = repo.create_org(owner_id, name=name, description=description, preset=preset)
+    created: dict[str, tuple] = {}   # stem -> (agent_id, partner_stem, dimension)
+    for stem, ac, cp, cd in metas:
+        ag = repo.create_agent(org.id, ac)
+        created[stem] = (ag.id, cp, cd)
+    for stem, (aid, cp, cd) in created.items():
+        if cp and cp in created:
+            repo.update_agent(aid, AgentUpdate(conflict_partner=created[cp][0],
+                                               conflict_dimension=cd))
+    return org
 
 
 def seed_judge_panel(repo, owner_id: str):
     """Create the 'Hackathon Judge Panel' org + agents. Returns the Org (or None)."""
-    personas = load_personas()
-    if not personas:
-        return None
-    org = repo.create_org(owner_id, name="Hackathon Judge Panel",
-                          description="The Most Sophisticated Harness judges, modeled as agents.",
-                          preset="judges")
-    for a in personas:
-        repo.create_agent(org.id, a)
-    return org
+    return _seed_council(
+        repo, owner_id, None, "Hackathon Judge Panel",
+        "The Most Sophisticated Harness judges, modeled as agents.", "judges")
+
+
+def seed_vc_committee(repo, owner_id: str):
+    """Create the 'VC Investment Committee' org from personas/vc/. Returns Org/None."""
+    return _seed_council(
+        repo, owner_id, "vc", "VC Investment Committee",
+        "A seed-stage investment committee with role-matched research tools.", "vc")
+
+
+# Council seeders by preset, used to ensure each council exists for a user.
+COUNCIL_SEEDERS = {"judges": seed_judge_panel, "vc": seed_vc_committee}
+
+
+def seed_all_councils(repo, owner_id: str) -> list:
+    """Seed every available council (skipping any with no personas). Returns Orgs."""
+    orgs = [seed(repo, owner_id) for seed in COUNCIL_SEEDERS.values()]
+    return [o for o in orgs if o]
